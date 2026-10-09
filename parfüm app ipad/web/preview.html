@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Widget-Vorschau</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Ersatz für iOS-Schriften: Bodoni Moda ≈ Didot/Bodoni, Libre Baskerville ≈ Baskerville, Cormorant ≈ Cochin, Nunito Sans ≈ Avenir -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..700;1,6..96,400..700&family=Libre+Baskerville:ital@0;1&family=Cormorant+Garamond:ital,wght@0,400;1,400&family=Nunito+Sans:ital,wght@0,400;1,400&family=Jost:wght@300;400;500&display=swap">
+<style>
+  :root {
+    --bg: #f4f1ed; --text: #2b2420; --leise: #8a7d72; --linie: #e1d8cc; --flaeche: #fff; --akzent-ui: #8a6d3b;
+    --serif: "Cormorant Garamond", Georgia, serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161412; --text: #eee7dd; --leise: #9c9086; --linie: #2f2925; --flaeche: #211d1a; --akzent-ui: #c9a464; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .rahmen { display: grid; grid-template-columns: 360px minmax(0, 1fr); min-height: 100vh; }
+  aside { border-right: 1px solid var(--linie); height: 100vh; position: sticky; top: 0; overflow: auto; padding: 22px 20px 40px; }
+  aside h1 { font: 400 26px/1.1 var(--serif); margin: 0 0 4px; }
+  aside .klein { color: var(--leise); font-size: 12.5px; margin: 0 0 18px; }
+  aside .eg-gruppe > h2 { font-size: 1.25rem; }
+  aside .eg-feld { padding: 11px 13px; }
+  aside .eg-titel { font-size: .86rem; }
+  aside .eg-regler input { width: 120px; }
+  aside .eg-text { width: 150px; }
+  aside .eg-segmente button { padding: 5px 8px; font-size: .76rem; }
+  header.leiste {
+    position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px 20px;
+    background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--linie);
+  }
+  .titel { margin-right: auto; display: flex; flex-direction: column; }
+  .titel strong { font-size: 15px; }
+  .titel span { font-size: 12px; color: var(--leise); }
+  label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--leise); }
+  select, button { font: inherit; color: var(--text); background: var(--flaeche); border: 1px solid var(--linie); border-radius: 8px; padding: 6px 10px; }
+  button { cursor: pointer; }
+  button:hover, select:hover { border-color: var(--leise); }
+  button.haupt { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .umschalter { display: inline-flex; border: 1px solid var(--linie); border-radius: 8px; overflow: hidden; }
+  .umschalter button { border: 0; border-radius: 0; }
+  .umschalter button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+  .hinweis { margin: 14px 20px 0; font-size: 12.5px; color: var(--leise); max-width: 110ch; }
+
+  .buehne { padding: 18px 20px 30px; overflow-x: auto; }
+  .homescreen {
+    --wand: radial-gradient(60% 50% at 15% 10%, #f6d2c0 0%, transparent 70%), radial-gradient(55% 55% at 85% 25%, #d8d3f0 0%, transparent 70%),
+            radial-gradient(70% 60% at 50% 100%, #c7e2dc 0%, transparent 70%), #ece4dd;
+    position: relative; width: max-content; min-width: 100%; border-radius: 28px; padding: 26px 34px 30px; background: var(--wand); transform-origin: top left;
+  }
+  .homescreen.dunkel {
+    --wand: radial-gradient(60% 50% at 15% 10%, #3b2433 0%, transparent 70%), radial-gradient(55% 55% at 85% 25%, #1f2747 0%, transparent 70%),
+            radial-gradient(70% 60% at 50% 100%, #12312f 0%, transparent 70%), #0e0e14;
+  }
+  .status { display: flex; justify-content: space-between; font: 600 13px system-ui, sans-serif; color: #1c1c1e; margin-bottom: 22px; opacity: .85; }
+  .dunkel .status { color: #fff; }
+  .raster { display: flex; flex-wrap: wrap; gap: 30px 34px; align-items: flex-start; max-width: 1240px; }
+  .platz { display: flex; flex-direction: column; gap: 8px; }
+  .platz .sw-widget { box-shadow: 0 10px 30px -12px rgba(0,0,0,.35); }
+  .platz .sw-widget.ueberlauf { outline: 2px dashed #e5484d; outline-offset: 3px; }
+  .beschriftung { font: 500 11px system-ui, sans-serif; color: rgba(28,28,30,.6); }
+  .dunkel .beschriftung { color: rgba(255,255,255,.55); }
+  .fehlerbox { border-radius: 22px; background: rgba(229,72,77,.12); border: 1px dashed #e5484d; color: #b4232a; padding: 14px; font: 12px/1.4 ui-monospace, Consolas, monospace; overflow: auto; white-space: pre-wrap; }
+  .apps { display: grid; grid-template-columns: repeat(2, 64px); gap: 14px 26px; align-content: start; }
+  .app { display: flex; flex-direction: column; align-items: center; gap: 5px; font: 500 11px system-ui, sans-serif; color: #1c1c1e; }
+  .dunkel .app { color: #fff; }
+  .app i { width: 64px; height: 64px; border-radius: 15px; display: block; box-shadow: 0 6px 16px -8px rgba(0,0,0,.4); }
+  .dock { margin: 34px auto 0; width: max-content; display: flex; gap: 18px; padding: 12px 16px; border-radius: 26px; background: rgba(255,255,255,.35); backdrop-filter: blur(14px); }
+  .dunkel .dock { background: rgba(60,60,70,.35); }
+  .dock i { width: 56px; height: 56px; border-radius: 13px; display: block; }
+  .protokoll { margin: 0 20px 40px; }
+  .protokoll h2 { font-size: 13px; color: var(--leise); font-weight: 600; margin: 0 0 6px; display: flex; gap: 12px; align-items: center; }
+  .protokoll button { padding: 2px 8px; font-size: 12px; }
+  #log { margin: 0; max-height: 220px; overflow: auto; background: var(--flaeche); border: 1px solid var(--linie); border-radius: 10px; padding: 10px 12px; font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; }
+  #log .warn { color: #b7791f; } #log .error { color: #d23b3b; } #log .zeit { color: var(--leise); }
+  @media (max-width: 1100px) { .rahmen { grid-template-columns: 1fr; } aside { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--linie); } }
+</style>
+</head>
+<body>
+<div class="rahmen">
+  <aside>
+    <h1>Einstellungen</h1>
+    <p class="klein">Änderungen wirken sofort auf die Widgets rechts und werden auch für <a href="einstellungen.html">einstellungen.html</a> gemerkt.
+      Aufs iPad kommen sie über „An Scriptable übertragen“ auf der Einstellungsseite.</p>
+    <div id="formular"></div>
+  </aside>
+  <div>
+    <header class="leiste">
+      <div class="titel"><strong>Widget-Vorschau</strong><span>scriptable/DuftDesTages.js im Scriptable-Nachbau</span></div>
+      <label>Parameter <select id="parameter"></select></label>
+      <label>Gerät <select id="geraet"></select></label>
+      <div class="umschalter" role="group" aria-label="iPad-Darstellung">
+        <button type="button" data-thema="hell" aria-pressed="true">Hell</button>
+        <button type="button" data-thema="dunkel" aria-pressed="false">Dunkel</button>
+      </div>
+      <label>Zoom <select id="zoom"><option value="0.75">75 %</option><option value="1" selected>100 %</option><option value="1.25">125 %</option></select></label>
+      <button type="button" id="vorschlag" class="haupt">Vorschlag berechnen</button>
+      <button type="button" id="menue">App-Menü öffnen</button>
+      <button type="button" id="neu">Neu rendern</button>
+      <button type="button" id="leeren" title="Simulierten Speicher (Auswahl, Verlauf, Cache) löschen">Zustand löschen</button>
+    </header>
+
+    <p class="hinweis">
+      Annäherung: Schriften sind Web-Ersatz (z. B. Bodoni Moda statt Didot), Zeilenumbrüche und Abstände weichen von iOS ab – das echte
+      Aussehen am Ende auf dem iPad prüfen. Widget antippen = Sprühen. Zustand und Verlauf liegen hier im Browser, nicht in iCloud.
+    </p>
+
+    <div class="buehne">
+      <main class="homescreen" id="homescreen">
+        <div class="status"><span id="uhr">9:41</span><span id="datum"></span><span>100 %</span></div>
+        <div class="raster" id="raster"></div>
+        <div class="dock" aria-hidden="true">
+          <i style="background: linear-gradient(#5ac8fa, #0a84ff)"></i><i style="background: linear-gradient(#ffd60a, #ff9f0a)"></i>
+          <i style="background: linear-gradient(#30d158, #248a3d)"></i><i style="background: linear-gradient(#ff6482, #ff2d55)"></i>
+          <i style="background: linear-gradient(#bf5af2, #8944ab)"></i><i style="background: linear-gradient(#f2f2f7, #c7c7cc)"></i>
+        </div>
+      </main>
+    </div>
+
+    <section class="protokoll">
+      <h2>Protokoll <button type="button" id="logLeeren">leeren</button></h2>
+      <pre id="log"></pre>
+    </section>
+  </div>
+</div>
+
+<script src="js/gemeinsam.js"></script>
+<script src="js/einstellungen.js"></script>
+<script src="scriptable-shim.js"></script>
+<script>
+"use strict";
+// ── Einstellbare Konstanten ─────────────────────────────────
+// Widget-Größen in Punkten (Richtwerte nach Apples Human Interface Guidelines) – wie WIDGET_GROESSEN im Skript.
+const GERAETE = {
+  "iPad Pro 11″ / Air": { bildschirm: [1194, 834], groessen: { small: [155, 155], medium: [342, 155], large: [342, 342], extraLarge: [715.5, 342] } },
+  "iPad Pro 12,9″ / 13″": { bildschirm: [1366, 1024], groessen: { small: [170, 170], medium: [378.5, 170], large: [378.5, 378.5], extraLarge: [795, 378.5] } },
+  "iPad mini": { bildschirm: [1133, 744], groessen: { small: [141, 141], medium: [305.5, 141], large: [305.5, 305.5], extraLarge: [634.5, 305.5] } },
+  "iPad 10,2″": { bildschirm: [1080, 810], groessen: { small: [146, 146], medium: [320.5, 146], large: [320.5, 320.5], extraLarge: [669, 320.5] } },
+};
+const WIDGET_FAMILIEN = ["small", "medium", "large", "extraLarge"];
+const ECKENRADIUS = 22;
+const SKRIPT_PFAD = "../scriptable/DuftDesTages.js";
+
+const shim = window.ScriptableShim;
+const $ = sel => document.querySelector(sel);
+let code = "";
+let geraet = Object.keys(GERAETE)[0];
+let laeuft = Promise.resolve();
+let werte = DuftEinstellungen.laden();
+
+// ── Protokoll: console.* der Skriptläufe mitschreiben ───────
+(() => {
+  const log = $("#log");
+  for (const art of ["log", "warn", "error"]) {
+    const original = console[art].bind(console);
+    console[art] = (...teile) => {
+      original(...teile);
+      const zeile = document.createElement("div");
+      if (art !== "log") zeile.className = art;
+      const zeit = document.createElement("span");
+      zeit.className = "zeit";
+      zeit.textContent = new Date().toLocaleTimeString("de-DE") + "  ";
+      zeile.append(zeit, teile.map(t => t instanceof Error ? (t.stack || t.message) : typeof t === "object" ? JSON.stringify(t) : String(t)).join(" "));
+      log.append(zeile);
+      log.scrollTop = log.scrollHeight;
+    };
+  }
+  $("#logLeeren").onclick = () => log.replaceChildren();
+})();
+
+// ── Aufbau ──────────────────────────────────────────────────
+function plaetzeAufbauen() {
+  const raster = $("#raster");
+  raster.replaceChildren();
+  const { groessen } = GERAETE[geraet];
+  for (const familie of WIDGET_FAMILIEN) {
+    const platz = document.createElement("div");
+    platz.className = "platz";
+    platz.dataset.familie = familie;
+    const [b, h] = groessen[familie];
+    const fach = document.createElement("div");
+    fach.className = "fach";
+    fach.style.width = b + "px"; fach.style.height = h + "px";
+    const text = document.createElement("div");
+    text.className = "beschriftung";
+    text.textContent = `${familie} · ${b} × ${h} pt`;
+    platz.append(fach, text);
+    raster.append(platz);
+    if (familie === "small") {
+      const apps = document.createElement("div");
+      apps.className = "apps";
+      apps.setAttribute("aria-hidden", "true");
+      for (const [name, farbe] of [["Fotos", "#ffd60a, #ff9f0a"], ["Notizen", "#fff3b0, #ffd60a"], ["Wetter", "#64d2ff, #0a84ff"], ["Scriptable", "#3a3a3c, #1c1c1e"]]) {
+        apps.insertAdjacentHTML("beforeend", `<div class="app"><i style="background: linear-gradient(${farbe})"></i>${name}</div>`);
+      }
+      raster.append(apps);
+    }
+  }
+}
+
+function umgebungSetzen() {
+  const g = GERAETE[geraet];
+  shim.umgebung.bildschirm = g.bildschirm;
+  shim.umgebung.widgetGroessen = g.groessen;
+  shim.umgebung.eckenradius = ECKENRADIUS;
+}
+
+// Läufe nacheinander abarbeiten – das Skript schreibt Zustand und Cache
+function nacheinander(aufgabe) {
+  laeuft = laeuft.then(aufgabe, aufgabe);
+  return laeuft;
+}
+
+async function widgetsRendern() {
+  umgebungSetzen();
+  const parameter = $("#parameter").value || null;
+  for (const familie of WIDGET_FAMILIEN) {
+    const fach = document.querySelector(`.platz[data-familie="${familie}"] .fach`);
+    const groesse = GERAETE[geraet].groessen[familie];
+    try {
+      const widget = await shim.ausfuehren(code, { modus: "widget", familie, parameter });
+      if (!widget) throw new Error("Script.setWidget() wurde nicht aufgerufen.");
+      const el = shim.zeichneWidget(widget, familie, groesse);
+      fach.replaceChildren(el);
+      shim.textAnpassen(el);
+      const ueberlauf = el.scrollHeight > el.clientHeight + 1;
+      el.classList.toggle("ueberlauf", ueberlauf);
+      if (ueberlauf) console.warn(`${familie}: Inhalt ist ${el.scrollHeight - el.clientHeight} pt zu hoch und wird abgeschnitten.`);
+      if (widget.url) el.addEventListener("click", () => widgetAntippen(widget.url));
+    } catch (e) {
+      console.error(e);
+      const box = document.createElement("div");
+      box.className = "fehlerbox";
+      box.style.width = groesse[0] + "px"; box.style.height = groesse[1] + "px";
+      box.textContent = `${familie}: ${e.message}`;
+      fach.replaceChildren(box);
+    }
+  }
+}
+
+function queryAusUrl(adresse) {
+  const i = adresse.indexOf("?");
+  return i < 0 ? {} : Object.fromEntries(new URLSearchParams(adresse.slice(i + 1)));
+}
+
+async function appStarten(query = {}, { leise = false } = {}) {
+  if (!leise) console.log(`App-Modus: ${Object.keys(query).length ? new URLSearchParams(query).toString().slice(0, 120) : "ohne Parameter (Menü)"}`);
+  try {
+    await shim.ausfuehren(code, { modus: "app", query });
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+// Einstellungen wie auf dem iPad über action=einstellungen ins Skript geben
+async function einstellungenUebertragen() {
+  await appStarten({ action: "einstellungen", still: "1", daten: JSON.stringify(DuftEinstellungen.abweichungen(werte)) }, { leise: true });
+}
+
+function widgetAntippen(adresse) {
+  console.log(`Widget angetippt: ${adresse}`);
+  nacheinander(async () => { await appStarten(queryAusUrl(adresse)); await widgetsRendern(); });
+}
+
+let einstellungsTimer;
+function einstellungGeaendert(neu) {
+  werte = neu;
+  DuftEinstellungen.speichern(werte);
+  clearTimeout(einstellungsTimer);
+  einstellungsTimer = setTimeout(() => nacheinander(async () => { await einstellungenUebertragen(); await widgetsRendern(); }), 250);
+}
+
+// ── Start ───────────────────────────────────────────────────
+(async () => {
+  for (const name of Object.keys(GERAETE)) $("#geraet").add(new Option(name, name));
+  $("#datum").textContent = new Date().toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "short" });
+  $("#uhr").textContent = new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  const formular = DuftEinstellungen.formular($("#formular"), werte, { gruppen: ["widget", "vorschlag"], onChange: einstellungGeaendert });
+
+  try {
+    code = await (await fetch(SKRIPT_PFAD, { cache: "no-store" })).text();
+  } catch (e) {
+    console.error(`Konnte ${SKRIPT_PFAD} nicht laden – läuft der Server im Repo-Hauptordner? (${e.message})`);
+    return;
+  }
+  // Anfragen an BASE_URL auf den lokalen Server umleiten
+  const treffer = code.match(/const\s+BASE_URL\s*=\s*["'`]([^"'`]+)["'`]/);
+  if (treffer) {
+    shim.umgebung.umleitung = { von: treffer[1].replace(/\/?$/, "/"), nach: new URL("./", location.href).href };
+    console.log(`BASE_URL ${shim.umgebung.umleitung.von} → ${shim.umgebung.umleitung.nach}`);
+  }
+
+  const parameterWahl = $("#parameter");
+  parameterWahl.add(new Option("(leer) – gespeicherte Auswahl", ""));
+  parameterWahl.add(new Option("auto – Vorschlag", "auto"));
+  try {
+    const duefte = await Duft.duefteLaden();
+    for (const d of duefte) parameterWahl.add(new Option(`${d.name} (${d.id})`, d.id));
+    formular.duefteSetzen(duefte);
+  } catch (e) {
+    console.error("data/duefte.json nicht ladbar:", e.message);
+  }
+
+  // Webfonts abwarten, sonst stimmt die Textanpassung nicht
+  await Promise.all(['22px "Bodoni Moda"', 'italic 12px "Bodoni Moda"', '20px "Libre Baskerville"', '20px "Cormorant Garamond"', '20px "Nunito Sans"']
+    .map(f => document.fonts.load(f))).catch(() => {});
+
+  plaetzeAufbauen();
+  await nacheinander(async () => { await einstellungenUebertragen(); await widgetsRendern(); });
+
+  parameterWahl.onchange = () => nacheinander(widgetsRendern);
+  $("#geraet").onchange = e => { geraet = e.target.value; plaetzeAufbauen(); nacheinander(widgetsRendern); };
+  $("#zoom").onchange = e => { $("#homescreen").style.zoom = e.target.value; };
+  for (const knopf of document.querySelectorAll("[data-thema]")) {
+    knopf.onclick = () => {
+      shim.umgebung.thema = knopf.dataset.thema;
+      document.querySelectorAll("[data-thema]").forEach(k => k.setAttribute("aria-pressed", String(k === knopf)));
+      $("#homescreen").classList.toggle("dunkel", knopf.dataset.thema === "dunkel");
+      nacheinander(widgetsRendern);
+    };
+  }
+  $("#neu").onclick = () => nacheinander(async () => { code = await (await fetch(SKRIPT_PFAD, { cache: "no-store" })).text(); await widgetsRendern(); });
+  $("#vorschlag").onclick = () => nacheinander(async () => {
+    parameterWahl.value = "auto";
+    await widgetsRendern();
+    await appStarten({ action: "vorschlag" });
+    await widgetsRendern();
+  });
+  $("#menue").onclick = () => nacheinander(async () => { await appStarten({}); await widgetsRendern(); });
+  $("#leeren").onclick = () => nacheinander(async () => {
+    shim.speicherLeeren();
+    console.log("Simulierter Speicher gelöscht.");
+    await einstellungenUebertragen();
+    await widgetsRendern();
+  });
+})();
+</script>
+</body>
+</html>

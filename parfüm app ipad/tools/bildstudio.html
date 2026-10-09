@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bildstudio</title>
+<style>
+  :root { --bg: #f4f0ea; --text: #2b2420; --leise: #85786d; --linie: #e1d8cc; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px; font: 15px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  h1 { font: 400 34px/1.1 Georgia, serif; margin: 0 0 6px; }
+  p { margin: 0 0 18px; color: var(--leise); max-width: 78ch; }
+  .leiste { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; align-items: center; }
+  button { font: inherit; padding: 9px 16px; border-radius: 999px; border: 1px solid var(--text); background: var(--text); color: var(--bg); cursor: pointer; }
+  button.zweit { background: transparent; color: var(--text); }
+  #status { min-height: 1.5em; font-size: 13px; color: var(--leise); margin-bottom: 18px; }
+  .raster { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 22px; }
+  figure { margin: 0; cursor: zoom-in; }
+  canvas { width: 100%; height: auto; display: block; border-radius: 8px; box-shadow: 0 14px 34px -20px rgba(0,0,0,.6); background: #ddd; }
+  figcaption { font-size: 13px; margin-top: 8px; display: flex; justify-content: space-between; gap: 8px; }
+  figcaption a { color: var(--leise); }
+  h2 { font: 400 22px Georgia, serif; margin: 36px 0 14px; }
+  .icons { display: flex; gap: 22px; flex-wrap: wrap; align-items: end; }
+  .icons canvas { width: 120px; border-radius: 26px; cursor: default; }
+  .gross { position: fixed; inset: 0; background: rgba(10,8,7,.9); display: grid; place-items: center; z-index: 9; cursor: zoom-out; }
+  .gross img { max-width: 92vw; max-height: 92vh; border-radius: 6px; }
+</style>
+</head>
+<body>
+<h1>Bildstudio</h1>
+<p>Rendert für jeden Duft ein Produktbild (1500 × 2000 px, JPEG): stilisierter Flakon aus <code>web/js/flakons.js</code>,
+Studiolicht, Spiegelung und Requisiten passend zur Duftfamilie. Läuft die Seite über <code>python tools/server.py</code>,
+landen die Dateien per Knopfdruck in <code>web/images/</code> bzw. <code>web/icons/</code>, sonst werden sie heruntergeladen.
+Aussehen der Flakons: Feld <code>flakon</code> in <code>duefte.json</code>. Bild antippen = groß ansehen.</p>
+<div class="leiste">
+  <button id="alleBilder">Alle Bilder speichern</button>
+  <button id="alleIcons">Icons speichern</button>
+  <button id="variation" class="zweit">Andere Variation</button>
+  <button id="ueberschreiben" class="zweit" hidden>Eigene Bilder trotzdem ersetzen</button>
+</div>
+<div id="status">Lade …</div>
+<div id="raster" class="raster"></div>
+<h2>App-Icons</h2>
+<div id="icons" class="icons"></div>
+
+<script src="../web/js/gemeinsam.js"></script>
+<script src="../web/js/flakons.js"></script>
+<script>
+"use strict";
+const B = 1500, H = 2000;
+const HORIZONT = H * 0.66;         // Linie zwischen Wand und Boden
+const FLAKON_HOEHE = H * 0.68;     // Höhe der SVG-Fläche (viewBox 400 × 600)
+const FLAKON_X = B * 0.58;         // Mitte des Flakons
+const TAU = Math.PI * 2;
+const { mischen, rgb, FAMILIEN } = Duft;
+let variation = 0;
+
+// ── Hilfen ─────────────────────────────────────────────────
+function hash(text) {
+  let h = 2166136261;
+  for (const z of text) { h ^= z.codePointAt(0); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function prng(seed) {
+  return () => {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rgba = (hex, a) => { const [r, g, b] = rgb(hex); return `rgba(${r},${g},${b},${a})`; };
+const zw = (z, a, b) => a + z() * (b - a);
+function radial(ctx, x, y, r, stopps, modus = "source-over", sy = 1) {
+  ctx.save();
+  ctx.globalCompositeOperation = modus;
+  ctx.translate(x, y); ctx.scale(1, sy);
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+  for (const [o, c] of stopps) g.addColorStop(o, c);
+  ctx.fillStyle = g;
+  ctx.fillRect(-r, -r, r * 2, r * 2);
+  ctx.restore();
+}
+function ebene() { const c = document.createElement("canvas"); c.width = B; c.height = H; return c; }
+function svgBild(svgText) {
+  return new Promise((ok, fehler) => {
+    const img = new Image();
+    img.onload = () => ok(img);
+    img.onerror = () => fehler(new Error("SVG nicht ladbar"));
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgText);
+  });
+}
+
+// ── Stimmung je Duft ───────────────────────────────────────
+function stimmungVon(duft) {
+  const waerme = (FAMILIEN[duft.duftfamilie] || {}).waerme ?? 0;
+  const dunkel = duft.studio ? duft.studio === "dunkel" : waerme >= 1;
+  const a = duft.farbe || "#b08d57";
+  return dunkel ? {
+    dunkel: true,
+    wandOben: mischen(a, "#090706", 0.86), wandUnten: mischen(a, "#120e0b", 0.7),
+    bodenNah: mischen(a, "#050404", 0.86), bodenFern: mischen(a, "#1a1410", 0.72),
+    licht: mischen(a, "#fff3df", 0.55), glanz: mischen(a, "#ffffff", 0.35), schatten: "#000000",
+  } : {
+    dunkel: false,
+    wandOben: mischen(a, "#f8f6f3", 0.8), wandUnten: mischen(a, "#cfc8bf", 0.5),
+    bodenNah: mischen(a, "#8f877e", 0.5), bodenFern: mischen(a, "#ece7e0", 0.62),
+    licht: "#ffffff", glanz: "#ffffff", schatten: mischen(a, "#14100c", 0.55), farbe: a,
+  };
+}
+
+// ── Requisiten je Duftfamilie (hinten = vor der Wand, vorne = vor dem Flakon) ──
+const REQUISITEN = {
+  zitrisch: {
+    hinten(ctx, z, s, a) { scheibe(ctx, B * 0.17, H * 0.36, 300, a, z, 0.75, 30, 1); },
+    vorne(ctx, z, s, a) {
+      scheibe(ctx, B * 0.88, H * 0.86, 230, a, z, 0.95, 6, 0.38);
+      scheibe(ctx, B * 0.08, H * 0.95, 260, a, z, 0.9, 26, 0.4);
+    },
+  },
+  frisch: {
+    hinten(ctx, z, s) {
+      ctx.save(); ctx.globalCompositeOperation = "screen"; ctx.filter = "blur(10px)";
+      for (let k = 0; k < 26; k++) {
+        const y0 = zw(z, H * 0.05, HORIZONT - 120), amp = zw(z, 10, 40), f = zw(z, 0.004, 0.01), ph = z() * TAU;
+        ctx.beginPath(); ctx.moveTo(-20, y0);
+        for (let x = -20; x <= B + 20; x += 20) ctx.lineTo(x, y0 + Math.sin(x * f + ph) * amp);
+        ctx.strokeStyle = rgba(s.licht, zw(z, 0.05, 0.16)); ctx.lineWidth = zw(z, 3, 12); ctx.stroke();
+      }
+      ctx.restore();
+    },
+    boden(ctx, z, s) {
+      ctx.save(); ctx.filter = "blur(2px)";
+      for (let r = 1; r < 7; r++) {
+        ctx.beginPath(); ctx.ellipse(FLAKON_X, HORIZONT + 10, 220 + r * 120, (220 + r * 120) * 0.14, 0, 0, TAU);
+        ctx.strokeStyle = rgba(s.licht, 0.16 - r * 0.018); ctx.lineWidth = 3; ctx.stroke();
+      }
+      ctx.restore();
+    },
+    vorne(ctx, z, s) { tropfen(ctx, z, s, 26); },
+  },
+  aromatisch: {
+    hinten(ctx, z, s) {
+      blatt(ctx, B * 0.2, H * 0.3, 380, -0.6, "#58775a", 34, 0.75);
+      blatt(ctx, B * 0.93, H * 0.22, 300, 2.5, "#4d6b51", 40, 0.6);
+    },
+    vorne(ctx, z, s) {
+      blatt(ctx, B * 0.12, H * 0.84, 340, 0.35, "#5f8562", 10, 0.95, 0.5);
+      blatt(ctx, B * 0.28, H * 0.92, 260, -0.2, "#6b8f6a", 18, 0.9, 0.5);
+      blatt(ctx, B * 0.92, H * 0.95, 320, 2.9, "#557a58", 26, 0.85, 0.5);
+    },
+  },
+  moschus: {
+    hinten(ctx, z, s) { seide(ctx, z, mischen(s.wandOben, "#ffffff", 0.6), mischen(s.wandUnten, "#000000", 0.08), 0.85); },
+    vorne(ctx, z, s) {
+      for (const [x, y, r, u] of [[0.2, 0.83, 46, 6], [0.27, 0.87, 34, 4], [0.86, 0.9, 58, 14], [0.13, 0.95, 70, 22]]) perle(ctx, B * x, H * y, r, u);
+    },
+  },
+  holzig: {
+    boden(ctx, z, s) {
+      ctx.save(); ctx.beginPath(); ctx.rect(0, HORIZONT, B, H - HORIZONT); ctx.clip(); ctx.filter = "blur(1.5px)";
+      for (let i = 0; i < 70; i++) {
+        const y = HORIZONT + Math.pow(z(), 1.6) * (H - HORIZONT);
+        ctx.beginPath(); ctx.moveTo(-20, y);
+        for (let x = -20; x < B + 40; x += 40) ctx.lineTo(x, y + Math.sin(x * 0.004 + i) * 6);
+        ctx.strokeStyle = rgba(z() > 0.5 ? "#000000" : s.licht, zw(z, 0.015, 0.05)); ctx.lineWidth = zw(z, 1, 5); ctx.stroke();
+      }
+      ctx.restore();
+    },
+    hinten(ctx, z, s) { rauch(ctx, z, s, 7, 0.14); },
+  },
+  orientalisch: {
+    hinten(ctx, z, s) { rauch(ctx, z, s, 10, 0.2); bokeh(ctx, z, s.licht, 26, 0.22); },
+    vorne(ctx, z, s) { staub(ctx, z, s.licht, 140); },
+  },
+  gourmand: {
+    hinten(ctx, z, s, a) { seide(ctx, z, mischen(a, "#ffd9a0", 0.35), mischen(a, "#2a160a", 0.4), 0.75); },
+    vorne(ctx, z, s, a) {
+      for (const [x, y, r] of [[0.16, 0.86, 70], [0.24, 0.9, 40], [0.9, 0.88, 90]]) honig(ctx, B * x, H * y, r, a);
+    },
+  },
+  floral: {
+    hinten(ctx, z, s, a) { for (let i = 0; i < 6; i++) bluetenblatt(ctx, zw(z, 0, B), zw(z, 0, HORIZONT), zw(z, 60, 140), z() * TAU, a, 26, 0.5); },
+    vorne(ctx, z, s, a) { for (let i = 0; i < 9; i++) bluetenblatt(ctx, zw(z, 0, B), zw(z, HORIZONT + 200, H), zw(z, 40, 90), z() * TAU, a, zw(z, 2, 14), 0.9, 0.45); },
+  },
+};
+
+function scheibe(ctx, cx, cy, r, a, z, alpha, blur, sy) {
+  ctx.save(); ctx.filter = `blur(${blur}px)`; ctx.globalAlpha = alpha; ctx.translate(cx, cy); ctx.scale(1, sy);
+  const schale = mischen(a, "#f2b51b", 0.5), fleisch = mischen(a, "#ffe58a", 0.55);
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fillStyle = schale; ctx.fill();
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.93, 0, TAU); ctx.fillStyle = "#fff8e0"; ctx.fill();
+  const n = 11, dreh = z() * TAU;
+  for (let i = 0; i < n; i++) {
+    const a0 = dreh + (i / n) * TAU + 0.05, a1 = dreh + ((i + 1) / n) * TAU - 0.05, am = (a0 + a1) / 2;
+    ctx.beginPath(); ctx.moveTo(Math.cos(am) * r * 0.08, Math.sin(am) * r * 0.08); ctx.arc(0, 0, r * 0.85, a0, a1); ctx.closePath();
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.85);
+    g.addColorStop(0, "#fff6cf"); g.addColorStop(1, fleisch);
+    ctx.fillStyle = g; ctx.fill();
+  }
+  ctx.restore();
+}
+function tropfen(ctx, z, s, anzahl) {
+  ctx.save();
+  for (let i = 0; i < anzahl; i++) {
+    const x = zw(z, 0, B), y = zw(z, HORIZONT + 80, H), r = zw(z, 6, 26) * (y / H);
+    ctx.filter = `blur(${y > H * 0.9 ? 3 : 0.6}px)`;
+    ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.55, 0, 0, TAU);
+    ctx.fillStyle = rgba("#000000", 0.12); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x, y - r * 0.1, r * 0.9, r * 0.48, 0, 0, TAU);
+    const g = ctx.createLinearGradient(x, y - r, x, y + r);
+    g.addColorStop(0, rgba(s.licht, 0.55)); g.addColorStop(1, rgba(s.licht, 0.08));
+    ctx.fillStyle = g; ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x - r * 0.35, y - r * 0.22, r * 0.2, r * 0.1, -0.3, 0, TAU); ctx.fillStyle = "rgba(255,255,255,.9)"; ctx.fill();
+  }
+  ctx.restore();
+}
+function blatt(ctx, x, y, laenge, winkel, farbe, blur, alpha, sy = 1) {
+  ctx.save(); ctx.filter = `blur(${blur}px)`; ctx.globalAlpha = alpha; ctx.translate(x, y); ctx.scale(1, sy); ctx.rotate(winkel);
+  const b = laenge * 0.32;
+  ctx.beginPath(); ctx.moveTo(-laenge / 2, 0);
+  ctx.quadraticCurveTo(-laenge * 0.1, -b, laenge / 2, 0); ctx.quadraticCurveTo(-laenge * 0.1, b, -laenge / 2, 0);
+  const g = ctx.createLinearGradient(0, -b, 0, b);
+  g.addColorStop(0, mischen(farbe, "#ffffff", 0.25)); g.addColorStop(1, mischen(farbe, "#000000", 0.35));
+  ctx.fillStyle = g; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-laenge / 2, 0); ctx.quadraticCurveTo(0, -b * 0.08, laenge / 2, 0);
+  ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.lineWidth = 3; ctx.stroke();
+  for (let i = 1; i < 6; i++) {
+    const px = -laenge / 2 + (laenge * i) / 6;
+    ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px + laenge * 0.08, -b * 0.55); ctx.moveTo(px, 0); ctx.lineTo(px + laenge * 0.08, b * 0.55);
+    ctx.strokeStyle = "rgba(255,255,255,.14)"; ctx.lineWidth = 2; ctx.stroke();
+  }
+  ctx.restore();
+}
+function seide(ctx, z, hell, dunkel, alpha) {
+  ctx.save(); ctx.filter = "blur(18px)"; ctx.globalAlpha = alpha;
+  for (let k = 0; k < 7; k++) {
+    const y0 = HORIZONT * (0.05 + k * 0.14), amp = zw(z, 40, 110), f = zw(z, 0.0018, 0.004), ph = z() * TAU, dicke = zw(z, 90, 200);
+    ctx.beginPath(); ctx.moveTo(-60, y0);
+    for (let x = -60; x <= B + 60; x += 30) ctx.lineTo(x, y0 + Math.sin(x * f + ph) * amp);
+    for (let x = B + 60; x >= -60; x -= 30) ctx.lineTo(x, y0 + dicke + Math.sin(x * f + ph + 0.8) * amp * 0.85);
+    ctx.closePath();
+    const g = ctx.createLinearGradient(0, y0 - amp, 0, y0 + dicke + amp);
+    g.addColorStop(0, rgba(hell, 0.9)); g.addColorStop(0.55, rgba(hell, 0.25)); g.addColorStop(1, rgba(dunkel, 0.35));
+    ctx.fillStyle = g; ctx.fill();
+  }
+  ctx.restore();
+}
+function perle(ctx, x, y, r, blur) {
+  ctx.save(); ctx.filter = `blur(${blur}px)`;
+  radial(ctx, x + r * 0.15, y + r * 0.85, r * 1.4, [[0, "rgba(0,0,0,.25)"], [1, "rgba(0,0,0,0)"]], "source-over", 0.3);
+  const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.05, x, y, r);
+  g.addColorStop(0, "#ffffff"); g.addColorStop(0.35, "#f4efe8"); g.addColorStop(0.8, "#cfc6bb"); g.addColorStop(1, "#a59b90");
+  ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fillStyle = g; ctx.fill();
+  ctx.restore();
+}
+function rauch(ctx, z, s, anzahl, alpha) {
+  ctx.save(); ctx.globalCompositeOperation = "screen"; ctx.filter = "blur(26px)"; ctx.lineCap = "round";
+  for (let k = 0; k < anzahl; k++) {
+    let x = FLAKON_X + zw(z, -380, 380), y = HORIZONT + 40;
+    ctx.beginPath(); ctx.moveTo(x, y);
+    for (let i = 0; i < 6; i++) {
+      const nx = x + zw(z, -260, 260), ny = y - zw(z, 180, 300);
+      ctx.bezierCurveTo(x + zw(z, -260, 260), y - 120, nx + zw(z, -260, 260), ny + 120, nx, ny);
+      x = nx; y = ny;
+    }
+    ctx.strokeStyle = rgba(s.licht, zw(z, alpha * 0.4, alpha)); ctx.lineWidth = zw(z, 20, 90); ctx.stroke();
+  }
+  ctx.restore();
+}
+function bokeh(ctx, z, farbe, anzahl, alpha) {
+  ctx.save(); ctx.globalCompositeOperation = "screen";
+  for (let i = 0; i < anzahl; i++) {
+    const x = zw(z, 0, B), y = zw(z, 0, HORIZONT * 0.95), r = zw(z, 18, 70);
+    ctx.filter = `blur(${zw(z, 3, 12)}px)`;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fillStyle = rgba(farbe, zw(z, alpha * 0.3, alpha)); ctx.fill();
+  }
+  ctx.restore();
+}
+function staub(ctx, z, farbe, anzahl) {
+  ctx.save(); ctx.globalCompositeOperation = "screen"; ctx.filter = "blur(1px)";
+  for (let i = 0; i < anzahl; i++) {
+    ctx.beginPath(); ctx.arc(zw(z, 0, B), zw(z, 0, H), zw(z, 0.8, 3.4), 0, TAU);
+    ctx.fillStyle = rgba(farbe, zw(z, 0.15, 0.6)); ctx.fill();
+  }
+  ctx.restore();
+}
+function honig(ctx, x, y, r, a) {
+  ctx.save(); ctx.filter = "blur(2px)";
+  const farbe = mischen(a, "#e08a12", 0.5);
+  radial(ctx, x, y + r * 0.1, r * 1.3, [[0, "rgba(0,0,0,.25)"], [1, "rgba(0,0,0,0)"]], "source-over", 0.35);
+  ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.38, 0, 0, TAU);
+  const g = ctx.createLinearGradient(x, y - r * 0.4, x, y + r * 0.4);
+  g.addColorStop(0, mischen(farbe, "#fff0c0", 0.5)); g.addColorStop(0.5, farbe); g.addColorStop(1, mischen(farbe, "#000", 0.4));
+  ctx.fillStyle = g; ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x - r * 0.3, y - r * 0.12, r * 0.35, r * 0.08, -0.1, 0, TAU); ctx.fillStyle = "rgba(255,255,255,.75)"; ctx.fill();
+  ctx.restore();
+}
+function bluetenblatt(ctx, x, y, r, w, a, blur, alpha, sy = 1) {
+  ctx.save(); ctx.filter = `blur(${blur}px)`; ctx.globalAlpha = alpha; ctx.translate(x, y); ctx.scale(1, sy); ctx.rotate(w);
+  ctx.beginPath(); ctx.ellipse(0, 0, r, r * 0.55, 0, 0, TAU);
+  const g = ctx.createLinearGradient(-r, 0, r, 0);
+  g.addColorStop(0, mischen(a, "#ffffff", 0.6)); g.addColorStop(1, mischen(a, "#000000", 0.15));
+  ctx.fillStyle = g; ctx.fill(); ctx.restore();
+}
+
+// ── Bild zusammensetzen ────────────────────────────────────
+async function zeichneBild(canvas, duft) {
+  const ctx = canvas.getContext("2d");
+  const z = prng(hash(duft.id) + variation * 7919);
+  const s = stimmungVon(duft), a = duft.farbe || "#b08d57";
+  const req = REQUISITEN[duft.duftfamilie] || {};
+
+  // 1. Wand
+  const wand = ctx.createLinearGradient(0, 0, 0, HORIZONT);
+  wand.addColorStop(0, s.wandOben); wand.addColorStop(1, s.wandUnten);
+  ctx.fillStyle = wand; ctx.fillRect(0, 0, B, HORIZONT + 2);
+  if (!s.dunkel) {
+    // farbiger Hof in der Akzentfarbe, damit helle Szenen nicht ausgewaschen wirken
+    radial(ctx, FLAKON_X, HORIZONT - FLAKON_HOEHE * 0.25, B * 0.7, [[0, rgba(a, 0.32)], [0.6, rgba(a, 0.12)], [1, rgba(a, 0)]]);
+    radial(ctx, B * 0.1, H * 0.05, B * 0.8, [[0, rgba(mischen(a, "#ffffff", 0.5), 0.5)], [1, rgba(a, 0)]]);
+  }
+  radial(ctx, FLAKON_X, H * 0.34, B * 0.62, [[0, rgba(s.licht, s.dunkel ? 0.38 : 0.85)], [0.45, rgba(s.licht, s.dunkel ? 0.12 : 0.3)], [1, rgba(s.licht, 0)]], s.dunkel ? "screen" : "source-over");
+
+  // 2. Boden
+  const boden = ctx.createLinearGradient(0, HORIZONT, 0, H);
+  boden.addColorStop(0, s.bodenFern); boden.addColorStop(1, s.bodenNah);
+  ctx.fillStyle = boden; ctx.fillRect(0, HORIZONT, B, H - HORIZONT);
+  const kante = ctx.createLinearGradient(0, HORIZONT - 40, 0, HORIZONT + 50);
+  kante.addColorStop(0, rgba(s.wandUnten, 0)); kante.addColorStop(0.5, rgba(mischen(s.wandUnten, s.bodenFern, 0.5), 0.85)); kante.addColorStop(1, rgba(s.bodenFern, 0));
+  ctx.fillStyle = kante; ctx.fillRect(0, HORIZONT - 40, B, 90);
+  radial(ctx, FLAKON_X, HORIZONT + 40, B * 0.55, [[0, rgba(s.licht, s.dunkel ? 0.3 : 0.6)], [1, rgba(s.licht, 0)]], s.dunkel ? "screen" : "source-over", 0.28);
+  if (req.boden) req.boden(ctx, z, s, a);
+
+  // 3. Requisiten hinten
+  if (req.hinten) req.hinten(ctx, z, s, a);
+
+  // 4. Flakon vorbereiten
+  const fb = FLAKON_HOEHE * (400 / 600), fh = FLAKON_HOEHE;
+  const fx = FLAKON_X - fb / 2, fy = HORIZONT - FLAKON_HOEHE * (Flakons.BODEN / 600);
+  const img = await svgBild(Flakons.svg(duft, { id: "s", breite: Math.round(fb), hoehe: Math.round(fh) }));
+  const geo = Flakons.geometrie(duft);
+  const einheit = fh / 600, koerperB = (geo.koerper.x1 - geo.koerper.x0) * einheit;
+
+  // Lichthof hinter dem Flakon (vor allem bei dunklen Szenen)
+  radial(ctx, FLAKON_X, fy + 380 * einheit, fh * 0.42, [[0, rgba(s.glanz, s.dunkel ? 0.3 : 0.5)], [1, rgba(s.glanz, 0)]], "screen");
+
+  // Spiegelung
+  const spiegel = ebene(), sc = spiegel.getContext("2d");
+  sc.save(); sc.translate(0, HORIZONT * 2); sc.scale(1, -1); sc.filter = "blur(2px)"; sc.drawImage(img, fx, fy, fb, fh); sc.restore();
+  sc.globalCompositeOperation = "destination-in";
+  const maske = sc.createLinearGradient(0, HORIZONT, 0, HORIZONT + fh * 0.45);
+  maske.addColorStop(0, `rgba(0,0,0,${s.dunkel ? 0.42 : 0.3})`); maske.addColorStop(1, "rgba(0,0,0,0)");
+  sc.fillStyle = maske; sc.fillRect(0, HORIZONT, B, H - HORIZONT);
+  ctx.drawImage(spiegel, 0, 0);
+
+  // Schatten
+  ctx.save(); ctx.filter = "blur(40px)";
+  ctx.beginPath(); ctx.ellipse(FLAKON_X + koerperB * 0.35, HORIZONT + 18, koerperB * 0.9, 46, 0, 0, TAU);
+  ctx.fillStyle = rgba(s.schatten, s.dunkel ? 0.5 : 0.22); ctx.fill();
+  ctx.filter = "blur(10px)";
+  ctx.beginPath(); ctx.ellipse(FLAKON_X, HORIZONT + 4, koerperB * 0.56, 12, 0, 0, TAU);
+  ctx.fillStyle = rgba(s.schatten, s.dunkel ? 0.85 : 0.45); ctx.fill();
+  ctx.restore();
+
+  // 5. Flakon mit Kantenlicht von links oben (nur auf den Flakon-Pixeln)
+  const fl = ebene(), flc = fl.getContext("2d");
+  flc.drawImage(img, fx, fy, fb, fh);
+  flc.globalCompositeOperation = "source-atop";
+  const kl = flc.createLinearGradient(fx, fy, fx + fb, fy + fh * 0.8);
+  kl.addColorStop(0, "rgba(255,255,255,.22)"); kl.addColorStop(0.55, "rgba(255,255,255,0)"); kl.addColorStop(1, "rgba(0,0,0,.18)");
+  flc.fillStyle = kl; flc.fillRect(fx, fy, fb, fh);
+  ctx.drawImage(fl, 0, 0);
+
+  // 6. Requisiten vorne
+  if (req.vorne) req.vorne(ctx, z, s, a);
+
+  // 7. Atmosphäre: Lichtstrahl, Dunst, Vignette
+  ctx.save(); ctx.globalCompositeOperation = "screen"; ctx.filter = "blur(50px)";
+  ctx.beginPath(); ctx.moveTo(B * 0.05, -100); ctx.lineTo(B * 0.32, -100); ctx.lineTo(FLAKON_X + 160, HORIZONT); ctx.lineTo(FLAKON_X - 260, HORIZONT); ctx.closePath();
+  ctx.fillStyle = rgba(s.licht, s.dunkel ? 0.08 : 0.18); ctx.fill();
+  ctx.restore();
+  radial(ctx, B / 2, H * 0.45, H * 0.85, [[0.42, "rgba(0,0,0,0)"], [1, rgba(s.schatten, s.dunkel ? 0.7 : 0.45)]]);
+
+  // 8. Körnung
+  const daten = ctx.getImageData(0, 0, B, H), px = daten.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const r = (z() - 0.5) * 8;
+    px[i] += r; px[i + 1] += r; px[i + 2] += r;
+  }
+  ctx.putImageData(daten, 0, 0);
+}
+
+// ── Icons ───────────────────────────────────────────────────
+async function zeichneIcon(canvas, maskierbar) {
+  const S = canvas.width, ctx = canvas.getContext("2d");
+  const bg = ctx.createRadialGradient(S * 0.5, S * 0.42, 0, S * 0.5, S * 0.5, S * 0.75);
+  bg.addColorStop(0, "#3a2d25"); bg.addColorStop(1, "#110d0b");
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, S, S);
+  const glanz = ctx.createRadialGradient(S * 0.5, S * 0.56, 0, S * 0.5, S * 0.56, S * 0.42);
+  glanz.addColorStop(0, "rgba(232,196,128,.3)"); glanz.addColorStop(1, "rgba(232,196,128,0)");
+  ctx.fillStyle = glanz; ctx.fillRect(0, 0, S, S);
+  const flakon = { id: "icon", farbe: "#C99A55", flakon: { form: "rechteck", breite: 200, hoehe: 280, radius: 18, art: "transparent", glas: "#E2B66B", fluessig: "#C38A35", deckel: "zylinder", metall: "gold" } };
+  // sichtbarer Flakon reicht im SVG etwa von y = 174 bis y = 580 (viewBox 400 × 600) → danach zentrieren
+  const k = (S * (maskierbar ? 0.52 : 0.66)) / 406, b = 400 * k, h = 600 * k;
+  const img = await svgBild(Flakons.svg(flakon, { id: "i", breite: Math.round(b), hoehe: Math.round(h) }));
+  ctx.drawImage(img, (S - b) / 2, S / 2 - 377 * k, b, h);
+}
+
+// ── Speichern ───────────────────────────────────────────────
+const alsBlob = (c, typ, q) => new Promise(ok => c.toBlob(ok, typ, q));
+// Eigene Bilder (z. B. aus Gemini) überschreibt der Server nur mit ueberschreiben = true
+async function speichern(canvas, pfad, typ, qualitaet, ueberschreiben = false) {
+  const blob = await alsBlob(canvas, typ, qualitaet);
+  try {
+    const antwort = await fetch(`/__speichern?pfad=${encodeURIComponent(pfad)}&ueberschreiben=${ueberschreiben ? 1 : 0}`, { method: "POST", body: blob });
+    if (antwort.ok) return "gespeichert";
+    if (antwort.status === 409) return "geschützt";
+  } catch (_) { /* kein Dev-Server */ }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = pfad.split("/").pop(); a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  return "heruntergeladen";
+}
+const status = t => { document.getElementById("status").textContent = t; };
+
+// ── Aufbau ──────────────────────────────────────────────────
+let duefte = [];
+const ICONS = [
+  { pfad: "web/icons/icon-512.png", groesse: 512, maskierbar: false },
+  { pfad: "web/icons/icon-192.png", groesse: 192, maskierbar: false },
+  { pfad: "web/icons/icon-maskable-512.png", groesse: 512, maskierbar: true },
+  { pfad: "web/icons/apple-touch-icon.png", groesse: 180, maskierbar: false },
+];
+
+async function bilderZeichnen() {
+  const raster = document.getElementById("raster");
+  raster.innerHTML = "";
+  for (const [i, d] of duefte.entries()) {
+    status(`Rendere ${i + 1}/${duefte.length}: ${d.name} …`);
+    const fig = document.createElement("figure");
+    const c = document.createElement("canvas"); c.width = B; c.height = H; c.dataset.id = d.id;
+    const cap = document.createElement("figcaption");
+    cap.innerHTML = `<span>${d.name}</span>`;
+    const link = document.createElement("a"); link.href = "#"; link.textContent = "speichern";
+    link.onclick = async e => {
+      e.preventDefault(); e.stopPropagation();
+      let ergebnis = await speichern(c, "web/" + d.bild, "image/jpeg", 0.9);
+      if (ergebnis === "geschützt" && confirm(`${d.name} hat ein eigenes Bild. Durch das Studio-Bild ersetzen?`)) {
+        ergebnis = await speichern(c, "web/" + d.bild, "image/jpeg", 0.9, true);
+      }
+      status(`${d.name}: ${ergebnis}`);
+    };
+    cap.append(link); fig.append(c, cap); raster.append(fig);
+    fig.onclick = () => {
+      const g = document.createElement("div"); g.className = "gross";
+      const bild = document.createElement("img"); bild.src = c.toDataURL("image/jpeg", 0.9);
+      g.append(bild); g.onclick = () => g.remove(); document.body.append(g);
+    };
+    try { await zeichneBild(c, d); } catch (e) { console.error(d.id, e); cap.firstChild.textContent += " – Fehler!"; }
+  }
+  status(`${duefte.length} Bilder gerendert.`);
+}
+
+async function iconsZeichnen() {
+  const box = document.getElementById("icons");
+  box.innerHTML = "";
+  for (const icon of ICONS) {
+    const c = document.createElement("canvas"); c.width = c.height = icon.groesse;
+    await zeichneIcon(c, icon.maskierbar);
+    icon.canvas = c; box.append(c);
+  }
+}
+
+document.getElementById("alleBilder").onclick = async () => {
+  const geschuetzt = [];
+  let gespeichert = 0, geladen = 0;
+  for (const c of document.querySelectorAll("#raster canvas")) {
+    const d = duefte.find(x => x.id === c.dataset.id);
+    const e = await speichern(c, "web/" + d.bild, "image/jpeg", 0.9);
+    if (e === "geschützt") geschuetzt.push({ c, d }); else if (e === "gespeichert") gespeichert++; else geladen++;
+  }
+  status(`${gespeichert} gespeichert` + (geladen ? `, ${geladen} heruntergeladen` : "") +
+    (geschuetzt.length ? `, ${geschuetzt.length} eigene Bilder nicht überschrieben (${geschuetzt.map(g => g.d.name).join(", ")}).` : "."));
+  const knopf = document.getElementById("ueberschreiben");
+  knopf.hidden = !geschuetzt.length;
+  knopf.onclick = async () => {
+    if (!confirm(`Eigene Bilder von ${geschuetzt.map(g => g.d.name).join(", ")} wirklich durch Studio-Bilder ersetzen?`)) return;
+    for (const { c, d } of geschuetzt) await speichern(c, "web/" + d.bild, "image/jpeg", 0.9, true);
+    knopf.hidden = true;
+    status("Eigene Bilder ersetzt.");
+  };
+};
+document.getElementById("alleIcons").onclick = async () => {
+  const ergebnisse = [];
+  for (const icon of ICONS) ergebnisse.push(await speichern(icon.canvas, icon.pfad, "image/png"));
+  status(`Icons ${ergebnisse.every(e => e === "gespeichert") ? "in web/icons/ gespeichert" : "heruntergeladen"}.`);
+};
+document.getElementById("variation").onclick = () => { variation++; bilderZeichnen(); };
+
+(async () => {
+  try {
+    duefte = await Duft.duefteLaden("../web/data/duefte.json");
+  } catch (e) {
+    status("Konnte ../web/data/duefte.json nicht laden – bitte über python tools/server.py öffnen.");
+    return;
+  }
+  // bildstudio.html?nur=<id> rendert nur diesen Duft, groß
+  const nur = new URLSearchParams(location.search).get("nur");
+  if (nur) {
+    duefte = duefte.filter(d => d.id === nur);
+    document.getElementById("raster").style.gridTemplateColumns = "1fr";
+    document.getElementById("raster").style.maxWidth = "900px";
+  }
+  if (!nur) await iconsZeichnen();
+  await bilderZeichnen();
+})();
+</script>
+</body>
+</html>

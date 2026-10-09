@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#100d0b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Duft des Tages</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Jost:wght@300;400;500&display=swap">
+<style>
+  :root {
+    --akzent: #c9a464;
+    --tief: #1a1411;
+    --tief-rgb: 26, 20, 17;
+    --wand-oben: #120e0c; --wand-unten: #261c17; --boden-fern: #2a201a; --boden-nah: #070605; --licht: #f3dcb4;
+    --creme: #f7f1e8;
+    --serif: "Cormorant Garamond", "Didot", "Bodoni 72", Georgia, serif;
+    --sans: "Jost", "Avenir Next", "Helvetica Neue", system-ui, sans-serif;
+    --horizont: 63vh;
+    --fh-basis: min(58vh, 135vw);     /* Höhe der Flakonfläche (viewBox 400 × 600) */
+    --skala: 1;                       /* Einstellung „Flakongröße“ */
+    --fh: calc(var(--fh-basis) * var(--skala));
+    --rand-x: max(7vw, calc(env(safe-area-inset-left) + 24px));
+    --rand-unten: max(6.5vh, calc(env(safe-area-inset-bottom) + 26px));
+    --oben: max(3.5vh, calc(env(safe-area-inset-top) + 16px));
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    overflow: hidden; background: var(--tief); color: var(--creme); font-family: var(--sans);
+    -webkit-font-smoothing: antialiased; -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation; cursor: pointer;
+  }
+  .ebene { position: fixed; inset: 0; }
+
+  /* ── Studio mit Flakon ─────────────────────────── */
+  .studio {
+    z-index: 0;
+    background:
+      radial-gradient(ellipse 46% 40% at 50% calc(var(--horizont) - 18vh), color-mix(in srgb, var(--licht) 28%, transparent), transparent 72%),
+      radial-gradient(ellipse 60% 12% at 50% var(--horizont), color-mix(in srgb, var(--licht) 18%, transparent), transparent 70%),
+      linear-gradient(to bottom, var(--wand-oben) 0%, var(--wand-unten) calc(var(--horizont) - 1px), var(--boden-fern) var(--horizont), var(--boden-nah) 100%);
+  }
+  .studio::after {  /* Vignette */
+    content: ""; position: absolute; inset: 0;
+    background: radial-gradient(ellipse 85% 75% at 50% 45%, transparent 50%, rgba(0,0,0,.6) 100%);
+  }
+  .szene { z-index: 1; opacity: 0; transition: opacity .7s ease, transform .7s ease, filter .7s ease; }
+  body.bereit .szene { opacity: 1; }
+  body.phase-bild .szene { opacity: 0; transform: scale(.96); filter: blur(6px); transition: opacity 1.2s ease, transform 1.6s cubic-bezier(.2,.7,.2,1), filter 1.2s ease; }
+  .flakon-box {
+    position: absolute; left: 50%; height: var(--fh); width: calc(var(--fh) * 2 / 3);
+    top: calc(var(--horizont) - var(--fh) * 580 / 600); transform: translateX(-50%);
+    -webkit-box-reflect: below calc(var(--fh) * -40 / 600) linear-gradient(transparent 58%, rgba(255,255,255,.26));
+  }
+  .flakon-box svg { width: 100%; height: 100%; overflow: visible; display: block; }
+  .bodenschatten {
+    position: absolute; left: 50%; top: var(--horizont); width: calc(var(--fh) * .5); height: calc(var(--fh) * .05);
+    transform: translate(-50%, -50%); border-radius: 50%;
+    background: radial-gradient(closest-side, rgba(0,0,0,.75), rgba(0,0,0,0));
+  }
+  .szene-titel { position: absolute; left: 0; right: 0; bottom: var(--rand-unten); margin: 0; text-align: center; line-height: 1.25; }
+  .szene-titel .marke-klein { display: block; font: 500 .66rem/1 var(--sans); letter-spacing: .36em; text-transform: uppercase; opacity: .6; margin-bottom: .8em; }
+  .szene-titel .name-klein { font: italic 300 clamp(1.4rem, 2.6vw, 2.1rem)/1.1 var(--serif); opacity: .9; }
+
+  /* ── Nebel ─────────────────────────────────────── */
+  #nebel { z-index: 4; width: 100vw; height: 100vh; pointer-events: none; }
+
+  /* ── Großes Bild ───────────────────────────────── */
+  .bild { z-index: 2; overflow: hidden; opacity: 0; background: linear-gradient(160deg, var(--akzent), var(--tief)); transition: opacity .6s ease; }
+  body.phase-bild .bild { opacity: 1; transition: opacity 1.5s cubic-bezier(.3,.1,.2,1) .05s; }
+  .bild img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 22%; display: block; will-change: transform; transform: scale(1.04); }
+  .bild #bildHinten { display: none; }
+  .bild img.kb { animation: kenburns 24s cubic-bezier(.25,.1,.25,1) infinite alternate; }
+  @keyframes kenburns { from { transform: scale(1.04); } to { transform: scale(1.14) translate3d(-1.5%, -1%, 0); } }
+  /* Querformat: Bild rechts wie eine Magazinseite, dahinter dasselbe Bild unscharf */
+  @media (min-aspect-ratio: 1/1) {
+    .bild #bildHinten { display: block; filter: blur(40px) saturate(1.2) brightness(.7); transform: scale(1.25); }
+    .bild #bild { left: auto; right: 0; width: 58vw; object-position: 50% 30%;
+      -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 26%); mask-image: linear-gradient(to right, transparent 0%, #000 26%); }
+    .info { right: auto; width: min(46vw, 640px); }
+    .schleier { background: linear-gradient(to right, rgba(var(--tief-rgb), .75) 0%, rgba(var(--tief-rgb), .35) 45%, transparent 70%), linear-gradient(to top, rgba(var(--tief-rgb), .5), transparent 40%); }
+    .name { font-size: clamp(3rem, 6.6vw, 7rem); }
+  }
+  .schleier {
+    z-index: 3; opacity: 0; pointer-events: none; transition: opacity .5s ease;
+    background:
+      radial-gradient(ellipse 90% 70% at 0% 100%, rgba(var(--tief-rgb), .85), transparent 70%),
+      linear-gradient(to top, rgba(var(--tief-rgb), .92) 0%, rgba(var(--tief-rgb), .55) 30%, rgba(var(--tief-rgb), 0) 58%),
+      linear-gradient(to bottom, rgba(0,0,0,.3) 0%, rgba(0,0,0,0) 18%);
+  }
+  body.phase-bild .schleier { opacity: 1; transition: opacity 1.6s ease .5s; }
+
+  /* ── Typografie ────────────────────────────────── */
+  .info { position: fixed; z-index: 5; left: var(--rand-x); right: var(--rand-x); bottom: var(--rand-unten); max-width: 1000px; pointer-events: none; }
+  .info > * { opacity: 0; transform: translateY(18px); transition: opacity .35s ease, transform .35s ease; }
+  body.phase-bild .info > * { opacity: 1; transform: none; transition: opacity 1.1s ease, transform 1.3s cubic-bezier(.2,.7,.2,1); }
+  body.phase-bild .info > :nth-child(1) { transition-delay: .65s; }
+  body.phase-bild .info > :nth-child(2) { transition-delay: .8s; }
+  body.phase-bild .info > :nth-child(3) { transition-delay: 1s; }
+  body.phase-bild .info > :nth-child(4) { transition-delay: 1.12s; }
+  body.phase-bild .info > :nth-child(5) { transition-delay: 1.24s; }
+  body.phase-bild .info > :nth-child(6) { transition-delay: 1.36s; }
+  body.phase-bild .info > :nth-child(7) { transition-delay: 1.5s; }
+  .eyebrow { margin: 0 0 1rem; font: 500 .74rem/1 var(--sans); letter-spacing: .36em; text-transform: uppercase; color: rgba(247,241,232,.78); }
+  .eyebrow .konz { opacity: .6; }
+  .name { margin: 0; font: 300 clamp(3.2rem, 9.5vw, 9rem)/.9 var(--serif); letter-spacing: -.015em; text-wrap: balance; text-shadow: 0 2px 40px rgba(0,0,0,.3); }
+  .grund { margin: 1.1rem 0 0; font: italic 400 clamp(1.15rem, 2vw, 1.5rem)/1.3 var(--serif); color: rgba(247,241,232,.92); }
+  .grund::before { content: "— "; opacity: .6; }
+  .grund:empty, .beschreibung:empty { display: none; }
+  .meta { margin: 1rem 0 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { display: inline-flex; align-items: center; gap: .55em; padding: .45em .95em; border-radius: 999px; font: 400 .8rem/1 var(--sans); letter-spacing: .04em;
+    background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.16); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+  .chip .punkt { width: .55em; height: .55em; border-radius: 50%; background: var(--akzent); box-shadow: 0 0 0 2px rgba(255,255,255,.2); }
+  .beschreibung { margin: 1.2rem 0 0; max-width: 46ch; font: italic 300 clamp(1.05rem, 1.6vw, 1.3rem)/1.45 var(--serif); color: rgba(247,241,232,.82); }
+  .linie { height: 1px; width: 72px; margin: 1.7rem 0 1.4rem; background: rgba(247,241,232,.45); }
+  .info > .linie { transform: scaleX(0); transform-origin: left; }
+  body.phase-bild .info > .linie { transform: none; }
+  .noten { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(1rem, 3.5vw, 3rem); max-width: 820px; }
+  .noten > div + div { border-left: 1px solid rgba(255,255,255,.14); padding-left: clamp(1rem, 2.5vw, 2rem); }
+  .noten h2 { margin: 0 0 .6rem; font: 500 .64rem/1 var(--sans); letter-spacing: .32em; text-transform: uppercase; color: rgba(247,241,232,.6); }
+  .noten ul { margin: 0; padding: 0; list-style: none; font: italic 400 clamp(1.1rem, 1.9vw, 1.45rem)/1.32 var(--serif); }
+  body.ohne-noten .noten, body.ohne-noten .linie { display: none; }
+
+  /* ── Bedienung ─────────────────────────────────── */
+  .steuerung { position: fixed; z-index: 6; right: var(--rand-x); top: var(--oben); display: flex; gap: 10px; opacity: 0; pointer-events: none; transition: opacity .6s ease; }
+  body.phase-bild .steuerung { opacity: 1; pointer-events: auto; transition-delay: 1.8s; }
+  .knopf { display: inline-flex; align-items: center; gap: .5em; height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid rgba(255,255,255,.22);
+    background: rgba(20,16,14,.35); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); color: inherit; text-decoration: none; cursor: pointer;
+    font: 400 .72rem/1 var(--sans); letter-spacing: .18em; text-transform: uppercase; }
+  .knopf:active { transform: scale(.96); }
+  .hinweis { position: fixed; z-index: 6; left: var(--rand-x); top: var(--oben); margin: 0; line-height: 40px; font: 400 .7rem/40px var(--sans); letter-spacing: .22em; text-transform: uppercase; opacity: 0; pointer-events: none; }
+  body.phase-bild .hinweis { animation: hinweis 6s ease 3.4s both; }
+  @keyframes hinweis { 0% { opacity: 0; } 15%, 75% { opacity: .6; } 100% { opacity: 0; } }
+  .meldung { position: fixed; inset: 0; z-index: 10; display: grid; place-content: center; gap: 1rem; text-align: center; padding: 2rem; font: italic 300 1.8rem/1.3 var(--serif); background: var(--tief); }
+  .meldung a { font: 400 .8rem/1 var(--sans); letter-spacing: .2em; text-transform: uppercase; color: inherit; }
+  .meldung[hidden] { display: none; }
+
+  @media (orientation: portrait) { :root { --horizont: 58vh; --fh-basis: min(48vh, 115vw); } }
+  @media (max-width: 640px) {
+    .noten { grid-template-columns: 1fr; gap: .9rem; }
+    .noten > div + div { border-left: 0; padding-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { .bild img.kb { animation: none; } }
+</style>
+</head>
+<body>
+  <div class="ebene studio" aria-hidden="true"></div>
+  <div class="ebene szene" aria-hidden="true">
+    <div class="bodenschatten"></div>
+    <div class="flakon-box" id="flakonBox"></div>
+    <p class="szene-titel"><span class="marke-klein" id="szeneMarke"></span><span class="name-klein" id="szeneName"></span></p>
+  </div>
+  <div class="ebene bild"><img id="bildHinten" alt=""><img id="bild" alt=""></div>
+  <div class="ebene schleier"></div>
+  <canvas id="nebel" class="ebene"></canvas>
+
+  <article class="info" id="info">
+    <p class="eyebrow"><span id="marke"></span> <span class="konz" id="konz"></span></p>
+    <h1 class="name" id="name"></h1>
+    <p class="grund" id="grund"></p>
+    <div class="meta" id="meta"></div>
+    <p class="beschreibung" id="beschreibung"></p>
+    <div class="linie"></div>
+    <div class="noten" id="noten"></div>
+  </article>
+
+  <nav class="steuerung">
+    <button class="knopf" id="nochmal" type="button">↻ Nochmal</button>
+    <a class="knopf" id="zurueck" href="index.html">Sammlung</a>
+  </nav>
+  <p class="hinweis">Antippen zum erneuten Sprühen</p>
+  <div class="meldung" id="meldung" hidden></div>
+
+<script src="js/gemeinsam.js"></script>
+<script src="js/flakons.js"></script>
+<script src="js/einstellungen.js"></script>
+<script>
+"use strict";
+const { mischen, rgb, FAMILIEN, KONZENTRATIONEN, familienName, jahreszeitName } = Duft;
+const $ = s => document.querySelector(s);
+const TAU = Math.PI * 2;
+const parameter = new URLSearchParams(location.search);
+const ausScriptable = parameter.get("quelle") === "scriptable";
+const E = DuftEinstellungen.laden();     // ?e=… aus Scriptable, sonst Browser-Speicher
+const ruhig = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// Zeitlupe/Standbild zum Feintuning: spray.html?id=…&tempo=0.25 bzw. &standbild=1.2
+const TEMPO = Math.min(4, Math.max(0.05, (parseFloat(parameter.get("tempo")) || 1) * E["spray.tempo"]));
+const MENGE = E["spray.menge"];
+const WINKEL = -E["spray.winkel"];
+
+// Zeitplan in Sekunden
+const T = {
+  vorlauf: 0.4,
+  wackelnEnde: 0.6,
+  druckStart: 0.48, druckTief: 0.6, loslassen: 1.1, druckEnde: 1.3,
+  spruehStart: 0.58,
+  schimmerStart: 0.7, schimmerDauer: 1.1,
+  bloom: 1.8, bild: 2.15, bloomEnde: 3.0,
+};
+const ART = {
+  tropfen: { anzahl: Math.round(260 * MENGE), dauer: 0.45, tau: 0.12 },
+  wolke:   { anzahl: Math.round(400 * MENGE), dauer: 0.75, tau: 0.24 },
+  glitzer: { anzahl: E["spray.glitzer"] ? Math.round(46 * MENGE) : 0, dauer: 0.9, tau: 0.5 },
+};
+
+// ── Inhalte ─────────────────────────────────────────────────
+let duft = null;
+
+function farbenSetzen(d) {
+  const a = d.farbe || "#c9a464";
+  const tief = mischen(a, "#0c0a09", 0.82);
+  const root = document.documentElement.style;
+  root.setProperty("--akzent", a);
+  root.setProperty("--tief", tief);
+  root.setProperty("--tief-rgb", rgb(tief).join(", "));
+  root.setProperty("--wand-oben", mischen(a, "#0a0807", 0.86));
+  root.setProperty("--wand-unten", mischen(a, "#16110e", 0.66));
+  root.setProperty("--boden-fern", mischen(a, "#1c1612", 0.68));
+  root.setProperty("--boden-nah", mischen(a, "#040303", 0.9));
+  root.setProperty("--licht", mischen(a, "#fff4e2", 0.55));
+  root.setProperty("--skala", String(E["spray.flakon"]));
+  document.querySelector('meta[name="theme-color"]').content = tief;
+}
+
+function inhaltSetzen(d) {
+  document.title = `${d.name} · Duft des Tages`;
+  farbenSetzen(d);
+  $("#flakonBox").innerHTML = Flakons.svg(d, { id: "f" });
+  $("#szeneMarke").textContent = d.marke || "";
+  $("#szeneName").textContent = d.name;
+  $("#marke").textContent = d.marke || "";
+  $("#konz").textContent = d.konzentration ? "· " + (KONZENTRATIONEN[d.konzentration] || d.konzentration) : "";
+  $("#name").textContent = d.name;
+  $("#grund").textContent = E["spray.zeigeGrund"] ? (parameter.get("grund") || "") : "";
+  $("#beschreibung").textContent = E["spray.zeigeBeschreibung"] ? (d.beschreibung || "") : "";
+
+  const chip = (...kinder) => Duft.el("span", { class: "chip" }, ...kinder);
+  const chips = [chip(Duft.el("span", { class: "punkt" }), familienName(d.duftfamilie))];
+  if (d.jahreszeiten && d.jahreszeiten.length) chips.push(chip(d.jahreszeiten.map(jahreszeitName).join(" & ")));
+  if (d.temperaturbereich) chips.push(chip(`${d.temperaturbereich.min} bis ${d.temperaturbereich.max} °C`));
+  if (parameter.get("getragen") === "1") chips.push(chip("✓ Heute getragen"));
+  $("#meta").replaceChildren(...chips);
+
+  document.body.classList.toggle("ohne-noten", !E["spray.zeigeNoten"]);
+  $("#noten").replaceChildren(...[["Kopf", d.kopfnoten], ["Herz", d.herznoten], ["Basis", d.basisnoten]].map(([titel, liste]) =>
+    Duft.el("div", {}, Duft.el("h2", {}, titel), Duft.el("ul", {}, ...(liste || []).map(n => Duft.el("li", {}, n))))));
+}
+
+let bildBereit = false;
+function bildLaden(d) {
+  return new Promise(ok => {
+    const img = $("#bild");
+    const h = [...d.id].reduce((s, z) => s + z.charCodeAt(0), 0);
+    img.style.transformOrigin = `${45 + (h % 20)}% ${30 + (h % 20)}%`;
+    if (d.bildFokus) img.style.objectPosition = `${d.bildFokus.x * 100}% ${d.bildFokus.y * 100}%`;
+    if (!d.bild) { bildBereit = true; return ok(false); }
+    img.onload = () => { bildBereit = true; ok(true); };
+    img.onerror = () => { img.removeAttribute("src"); bildBereit = true; ok(false); };
+    img.src = d.bild;
+    $("#bildHinten").src = d.bild;
+  });
+}
+
+// Scriptable kann ein eigenes Foto hineinreichen (Data-URL), bevor die Seite sichtbar wird
+window.eigenesBild = src => {
+  bildBereit = false;
+  $("#bild").onload = () => { bildBereit = true; };
+  $("#bild").src = src;
+  $("#bildHinten").src = src;
+  return true;
+};
+
+// ── Ton ─────────────────────────────────────────────────────
+let audio = null;
+function audioBereit() {
+  if (!E["spray.ton"]) return null;
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === "suspended") audio.resume();
+    return audio.state === "running" ? audio : null;
+  } catch (_) { return null; }
+}
+function rauschen(a, dauer) {
+  const n = Math.floor(a.sampleRate * dauer), puffer = a.createBuffer(1, n, a.sampleRate), d = puffer.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+  const q = a.createBufferSource(); q.buffer = puffer;
+  return q;
+}
+function klick() {
+  const a = audioBereit(); if (!a) return;
+  const q = rauschen(a, 0.04), f = a.createBiquadFilter(), g = a.createGain(), t = a.currentTime;
+  f.type = "lowpass"; f.frequency.value = 1200;
+  g.gain.setValueAtTime(0.25, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+  q.connect(f).connect(g).connect(a.destination); q.start();
+}
+function zischen(dauer) {
+  const a = audioBereit(); if (!a) return;
+  const q = rauschen(a, dauer), hp = a.createBiquadFilter(), spitze = a.createBiquadFilter(), g = a.createGain(), t = a.currentTime;
+  hp.type = "highpass"; hp.frequency.value = 1800;
+  spitze.type = "peaking"; spitze.frequency.value = 6500; spitze.gain.value = 7;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.3, t + 0.03);
+  g.gain.exponentialRampToValueAtTime(0.1, t + dauer * 0.45);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dauer);
+  q.connect(hp).connect(spitze).connect(g).connect(a.destination); q.start();
+}
+document.addEventListener("pointerdown", () => audioBereit(), { once: true });
+
+// ── Nebel ───────────────────────────────────────────────────
+const canvas = $("#nebel"), ctx = canvas.getContext("2d");
+let teilchen = [], sprites = {};
+
+function canvasGroesse() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  canvas.width = Math.round(innerWidth * dpr);
+  canvas.height = Math.round(innerHeight * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function nebelFarbe() {
+  if (E["spray.nebelfarbe"] === "weiss") return "#ffffff";
+  if (E["spray.nebelfarbe"] === "gold") return "#f4dfae";
+  return mischen("#ffffff", duft.farbe || "#c9a464", 0.2);
+}
+
+function spritesErzeugen() {
+  const farbe = rgb(nebelFarbe()).join(",");
+  const wolke = saat => {
+    const c = document.createElement("canvas"); c.width = c.height = 96;
+    const g = c.getContext("2d");
+    let s = saat;
+    const zf = () => (s = (s * 9301 + 49297) % 233280) / 233280;
+    for (let i = 0; i < 9; i++) {
+      const x = 48 + (zf() - 0.5) * 40, y = 48 + (zf() - 0.5) * 40, r = 14 + zf() * 22;
+      const v = g.createRadialGradient(x, y, 0, x, y, r);
+      v.addColorStop(0, `rgba(${farbe},${0.25 + zf() * 0.35})`); v.addColorStop(1, `rgba(${farbe},0)`);
+      g.fillStyle = v; g.fillRect(0, 0, 96, 96);
+    }
+    g.globalCompositeOperation = "destination-in";
+    const m = g.createRadialGradient(48, 48, 10, 48, 48, 48);
+    m.addColorStop(0, "rgba(0,0,0,1)"); m.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = m; g.fillRect(0, 0, 96, 96);
+    return c;
+  };
+  const punkt = (stopps, groesse = 32) => {
+    const c = document.createElement("canvas"); c.width = c.height = groesse;
+    const g = c.getContext("2d"), h = groesse / 2, v = g.createRadialGradient(h, h, 0, h, h, h);
+    for (const [o, a] of stopps) v.addColorStop(o, `rgba(${farbe},${a})`);
+    g.fillStyle = v; g.fillRect(0, 0, groesse, groesse);
+    return c;
+  };
+  const stern = () => {
+    const c = punkt([[0, 1], [0.15, 0.8], [0.4, 0.12], [1, 0]], 64), g = c.getContext("2d");
+    g.globalCompositeOperation = "lighter"; g.fillStyle = "rgba(255,255,255,.8)";
+    g.fillRect(31, 6, 2, 52); g.fillRect(6, 31, 52, 2);
+    return c;
+  };
+  sprites = { wolken: [wolke(7), wolke(91), wolke(313)], licht: punkt([[0, 0.9], [0.3, 0.45], [1, 0]], 128), tropfen: punkt([[0, 1], [0.4, 0.7], [1, 0]], 16), stern: stern() };
+}
+
+const zufall = (a, b) => a + Math.random() * (b - a);
+const glocke = () => (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
+
+function duese() {
+  const d = $("#f-duese").getBoundingClientRect(), box = $("#flakonBox").getBoundingClientRect();
+  return { x: d.left + d.width / 2, y: d.top + d.height / 2, e: box.height / 600 };
+}
+
+function emittieren(art, anzahl, fortschritt) {
+  const { x, y, e } = duese();
+  for (let i = 0; i < anzahl; i++) {
+    let winkel, tempo, p;
+    if (art === "tropfen") {
+      winkel = (WINKEL + glocke() * 7) * Math.PI / 180;
+      tempo = zufall(900, 1700) * (1 - 0.35 * fortschritt) * e;
+      p = { daempfung: zufall(3.5, 5), leben: zufall(0.45, 1), r0: zufall(0.5, 1.3) * e, r1: 0, a: zufall(0.45, 0.85) };
+    } else if (art === "wolke") {
+      winkel = (WINKEL + glocke() * (11 + 12 * fortschritt)) * Math.PI / 180;
+      tempo = zufall(380, 1050) * (1 - 0.45 * fortschritt) * e;
+      p = { daempfung: zufall(2.2, 3.4), leben: zufall(1.4, 2.9), r0: zufall(2, 5) * e, r1: zufall(24, 72) * e, a: zufall(0.09, 0.2), sprite: sprites.wolken[i % 3] };
+    } else {
+      winkel = (WINKEL + glocke() * 16) * Math.PI / 180;
+      tempo = zufall(300, 900) * e;
+      p = { daempfung: zufall(2, 3), leben: zufall(1, 2.2), r0: zufall(0.9, 1.8) * e, r1: 0, a: zufall(0.6, 1) };
+    }
+    const quer = zufall(-1, 1) * (art === "tropfen" ? 30 : 70) * e;
+    teilchen.push(Object.assign(p, {
+      art, x: x + zufall(-1, 1) * e, y: y + zufall(-1.5, 1.5) * e,
+      vx: Math.cos(winkel) * tempo - Math.sin(winkel) * quer, vy: Math.sin(winkel) * tempo + Math.cos(winkel) * quer,
+      alter: 0, saat: Math.random() * 1000, phase: Math.random() * TAU, e,
+    }));
+  }
+}
+
+function bewegen(dt, t) {
+  for (const p of teilchen) {
+    p.alter += dt;
+    const d = Math.exp(-p.daempfung * dt);
+    p.vx *= d; p.vy *= d;
+    if (p.art === "tropfen") {
+      if (p.alter > 0.22) p.vy += 260 * p.e * dt;           // feine Tröpfchen sinken
+    } else {
+      p.vy -= 18 * p.e * dt;                                  // Nebel steigt leicht
+      const wirbel = 95 * p.e * Math.min(1, p.alter * 1.3);
+      p.vx += (Math.sin(p.y * 0.011 + t * 1.3 + p.saat) + Math.sin(p.x * 0.007 - t * 0.9)) * 0.5 * wirbel * dt;
+      p.vy += (Math.cos(p.x * 0.012 + t * 1.1 + p.saat * 1.3) + Math.cos(p.y * 0.006 + t * 0.7)) * 0.5 * wirbel * dt;
+    }
+    p.px = p.x; p.py = p.y;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+  }
+  teilchen = teilchen.filter(p => p.alter < p.leben);
+}
+
+function schwerpunkt() {
+  let x = 0, y = 0, n = 0;
+  for (const p of teilchen) if (p.art === "wolke") { x += p.x; y += p.y; n++; }
+  return n ? { x: x / n, y: y / n } : null;
+}
+let bloomMitte = null;
+
+function zeichnen(t) {
+  ctx.clearRect(0, 0, innerWidth, innerHeight);
+  const ts = t - T.spruehStart;
+  // Licht, das den Nebel streift
+  if (ts > 0 && ts < 1.6) {
+    const { x, y, e } = duese(), w = WINKEL * Math.PI / 180, r = 260 * e;
+    ctx.globalCompositeOperation = "screen";
+    ctx.globalAlpha = 0.2 * Math.sin(Math.min(1, ts / 1.6) * Math.PI);
+    ctx.drawImage(sprites.licht, x + Math.cos(w) * r * 0.6 - r, y + Math.sin(w) * r * 0.6 - r, r * 2, r * 2);
+    if (ts < 0.3) { ctx.globalAlpha = 0.45 * (1 - ts / 0.3); ctx.drawImage(sprites.licht, x - 30 * e, y - 30 * e, 60 * e, 60 * e); }
+  }
+  ctx.globalCompositeOperation = "screen";
+  for (const p of teilchen) {
+    if (p.art !== "wolke") continue;
+    const k = p.alter / p.leben, a = p.a * Math.min(1, k / 0.05) * Math.pow(1 - k, 1.35);
+    if (a < 0.003) continue;
+    const r = p.r0 + (p.r1 - p.r0) * (1 - Math.pow(1 - k, 3));
+    ctx.globalAlpha = a;
+    ctx.drawImage(p.sprite, p.x - r, p.y - r, r * 2, r * 2);
+  }
+  ctx.globalCompositeOperation = "lighter";
+  ctx.lineCap = "round";
+  for (const p of teilchen) {
+    if (p.art === "wolke") continue;
+    const k = p.alter / p.leben;
+    if (p.art === "tropfen") {
+      const a = p.a * Math.pow(1 - k, 1.2);
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = "rgba(255,255,255,.9)";
+      ctx.lineWidth = p.r0 * 1.6;
+      ctx.beginPath(); ctx.moveTo(p.px ?? p.x, p.py ?? p.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+    } else {
+      ctx.globalAlpha = p.a * Math.pow(1 - k, 1.1) * (0.5 + 0.5 * Math.sin(p.alter * 22 + p.phase));
+      const r = p.r0 * 5;
+      ctx.drawImage(sprites.stern, p.x - r, p.y - r, r * 2, r * 2);
+    }
+  }
+  // Übergang: der Nebel leuchtet auf und öffnet das Bild
+  if (t > T.bloom && t < T.bloomEnde) {
+    if (!bloomMitte) bloomMitte = schwerpunkt() || { x: innerWidth / 2, y: innerHeight / 2 };
+    const k = (t - T.bloom) / (T.bloomEnde - T.bloom), diag = Math.hypot(innerWidth, innerHeight);
+    const r = diag * (0.15 + 1.1 * (1 - Math.pow(1 - k, 2)));
+    ctx.globalCompositeOperation = "screen";
+    ctx.globalAlpha = 0.55 * Math.sin(k * Math.PI);
+    ctx.drawImage(sprites.licht, bloomMitte.x - r, bloomMitte.y - r, r * 2, r * 2);
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = "source-over";
+}
+
+// ── Flakon-Bewegung ─────────────────────────────────────────
+const klemmen = x => Math.min(1, Math.max(0, x));
+const easeIn = x => x * x * x;
+const easeOut = x => 1 - Math.pow(1 - x, 3);
+const easeInOut = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+
+function flakonBewegen(t) {
+  const ganz = $("#f-ganz"), kopf = $("#f-kopf"), schimmer = $("#f-schimmer");
+  let winkel = 0, hub = 0;
+  if (t > 0 && t < T.wackelnEnde) {
+    const w = t / T.wackelnEnde;
+    winkel = 3.6 * Math.sin(w * Math.PI * 4) * Math.pow(1 - w, 1.3);
+    hub = -6 * Math.sin(w * Math.PI);
+  }
+  if (ganz) ganz.setAttribute("transform", `translate(0 ${hub.toFixed(2)}) rotate(${winkel.toFixed(2)} 200 580)`);
+  let druck = 0;
+  if (t >= T.druckStart && t < T.druckTief) druck = 8 * easeIn((t - T.druckStart) / (T.druckTief - T.druckStart));
+  else if (t >= T.druckTief && t < T.loslassen) druck = 8;
+  else if (t >= T.loslassen && t < T.druckEnde) druck = 8 * (1 - easeOut((t - T.loslassen) / (T.druckEnde - T.loslassen)));
+  if (kopf) kopf.setAttribute("transform", `translate(0 ${druck.toFixed(2)})`);
+  if (schimmer) {
+    const s = klemmen((t - T.schimmerStart) / T.schimmerDauer), w = 600;
+    schimmer.setAttribute("transform", `translate(${(-w * 0.6 + w * 1.2 * easeInOut(s)).toFixed(1)} 0)`);
+  }
+}
+
+// ── Ablauf ──────────────────────────────────────────────────
+let phase = "laden", startzeit = null, letzte = null, laeuft = false, ausgestossen = {}, geraeusch = false;
+
+function kurve(art, x) {
+  const { dauer, tau } = ART[art];
+  return (1 - Math.exp(-klemmen(x / dauer) * dauer / tau)) / (1 - Math.exp(-dauer / tau));
+}
+
+function bildZeigen() {
+  phase = "bild";
+  const img = $("#bild");
+  img.classList.remove("kb");
+  if (E["spray.kenBurns"]) { void img.offsetWidth; img.classList.add("kb"); }
+  document.body.classList.add("phase-bild");
+}
+
+function simulieren(t, dt) {
+  if (phase === "spruehen") {
+    flakonBewegen(t);
+    if (t >= T.druckStart && !geraeusch) { geraeusch = true; klick(); setTimeout(() => zischen(0.9 / TEMPO), 90 / TEMPO); }
+    const ts = t - T.spruehStart;
+    if (ts >= 0) {
+      for (const art of Object.keys(ART)) {
+        const soll = Math.round(kurve(art, ts) * ART[art].anzahl);
+        if (soll > (ausgestossen[art] || 0)) { emittieren(art, soll - (ausgestossen[art] || 0), klemmen(ts / ART[art].dauer)); ausgestossen[art] = soll; }
+      }
+    }
+    if (t >= T.bild && (bildBereit || t > T.bild + 3)) bildZeigen();
+  }
+  bewegen(dt, t);
+}
+
+function schritt(jetzt) {
+  if (startzeit === null) { startzeit = jetzt + T.vorlauf * 1000 / TEMPO; letzte = jetzt; }
+  const dt = Math.min(0.05, (jetzt - letzte) / 1000) * TEMPO;
+  letzte = jetzt;
+  const t = (jetzt - startzeit) / 1000 * TEMPO;
+  simulieren(t, dt);
+  zeichnen(t);
+  if (phase === "bild" && teilchen.length === 0 && t > T.bloomEnde) {
+    laeuft = false;
+    ctx.clearRect(0, 0, innerWidth, innerHeight);
+    return;
+  }
+  requestAnimationFrame(schritt);
+}
+
+function spruehen() {
+  if (ruhig || !E["spray.animation"]) { setTimeout(bildZeigen, ruhig ? 500 : 150); return; }
+  phase = "spruehen"; startzeit = null; ausgestossen = {}; geraeusch = false; bloomMitte = null;
+  flakonBewegen(0);
+  if (!laeuft) { laeuft = true; requestAnimationFrame(schritt); }
+}
+
+function nochmal() {
+  if (phase !== "bild") return;
+  audioBereit();
+  phase = "zurueck";
+  document.body.classList.remove("phase-bild");
+  setTimeout(spruehen, 750);
+}
+
+// ── Start ───────────────────────────────────────────────────
+(async () => {
+  if (ausScriptable) $("#zurueck").hidden = true;
+  canvasGroesse();
+  addEventListener("resize", canvasGroesse);
+  try {
+    const duefte = await Duft.duefteLaden();
+    const id = parameter.get("id");
+    duft = id ? duefte.find(d => d.id === id) : duefte[0];
+  } catch (e) {
+    console.error(e);
+  }
+  if (!duft) {
+    const m = $("#meldung");
+    m.replaceChildren(Duft.el("span", {}, "Dieser Duft ist nicht in der Sammlung."), Duft.el("a", { href: "index.html" }, "Zur Sammlung"));
+    m.hidden = false;
+    return;
+  }
+  inhaltSetzen(duft);
+  spritesErzeugen();
+  const bildGeladen = bildLaden(duft);
+  await Promise.race([document.fonts && document.fonts.ready, new Promise(r => setTimeout(r, 1200))]);
+  document.body.classList.add("bereit");
+
+  const standbild = parseFloat(parameter.get("standbild"));
+  if (!isNaN(standbild)) {
+    await bildGeladen;
+    phase = "spruehen";
+    for (let t = 0; t <= standbild; t += 1 / 60) simulieren(t, 1 / 60);
+    zeichnen(standbild);
+    return;
+  }
+  spruehen();
+
+  $("#nochmal").addEventListener("click", e => { e.stopPropagation(); nochmal(); });
+  document.addEventListener("click", e => { if (!e.target.closest("a, button")) nochmal(); });
+  document.addEventListener("keydown", e => { if (e.key === " " || e.key === "Enter") nochmal(); });
+})();
+
+// Service Worker nur online (GitHub Pages) – lokal würde er beim Entwickeln alte Dateien ausliefern
+if ("serviceWorker" in navigator && !ausScriptable && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+</script>
+</body>
+</html>

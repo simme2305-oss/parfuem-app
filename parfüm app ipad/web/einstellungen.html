@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Einstellungen · Duftgarderobe</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,400&family=Jost:wght@300;400;500&display=swap">
+<style>
+  :root {
+    --bg: #f6f1ea; --flaeche: #fcfaf6; --text: #2b2420; --leise: #887b70; --linie: #e7ded2; --glas: rgba(246,241,234,.82);
+    --akzent-ui: #8a6d3b;
+    --serif: "Cormorant Garamond", Georgia, serif;
+    --sans: "Jost", "Avenir Next", system-ui, sans-serif;
+    color-scheme: light;
+  }
+  :root[data-dunkel] { --bg: #131110; --flaeche: #1c1816; --text: #f1eae0; --leise: #a0958a; --linie: #2e2723; --glas: rgba(19,17,16,.82); --akzent-ui: #c9a464; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 300 16px/1.5 var(--sans); -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
+  a { color: inherit; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  .seite { max-width: 1100px; margin: 0 auto; padding: max(40px, calc(env(safe-area-inset-top) + 20px)) max(24px, env(safe-area-inset-right)) 140px max(24px, env(safe-area-inset-left));
+    display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 40px; }
+  .zurueck { font: 400 .72rem/1 var(--sans); letter-spacing: .22em; text-transform: uppercase; text-decoration: none; color: var(--leise); }
+  header { grid-column: 1 / -1; }
+  .eyebrow { font: 500 .7rem/1 var(--sans); letter-spacing: .38em; text-transform: uppercase; color: var(--leise); margin: 26px 0 12px; }
+  h1 { font: 300 clamp(2.8rem, 6vw, 4.6rem)/1 var(--serif); margin: 0; }
+  .einleitung { margin: 14px 0 0; color: var(--leise); max-width: 62ch; font-size: .95rem; }
+  nav.inhalt { position: sticky; top: 24px; align-self: start; display: grid; gap: 4px; }
+  nav.inhalt a { text-decoration: none; padding: 8px 12px; border-radius: 10px; color: var(--leise); font-size: .92rem; }
+  nav.inhalt a:hover { background: var(--flaeche); color: var(--text); }
+  .sichern textarea { width: 100%; min-height: 120px; border: 1px solid var(--linie); border-radius: 12px; background: var(--flaeche); padding: 12px; font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace; }
+  .reihe { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .knopf { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; padding: 0 20px; border-radius: 999px; border: 1px solid var(--text);
+    background: transparent; text-decoration: none; cursor: pointer; font: 400 .76rem/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; }
+  .knopf.primaer { background: var(--text); color: var(--bg); }
+  .knopf.klein { min-height: 38px; padding: 0 14px; font-size: .7rem; border-color: var(--linie); }
+  .leiste { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; padding: 14px max(24px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+    background: var(--glas); -webkit-backdrop-filter: blur(18px) saturate(1.3); backdrop-filter: blur(18px) saturate(1.3); border-top: 1px solid var(--linie); }
+  .leiste-innen { max-width: 1100px; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .status { margin-right: auto; font-size: .82rem; color: var(--leise); }
+  .test-wahl { padding: 10px 12px; border-radius: 999px; border: 1px solid var(--linie); background: var(--flaeche); font-size: .82rem; }
+  .vorschau { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.6); display: grid; place-items: center; padding: 20px; }
+  .vorschau[hidden] { display: none; }
+  .vorschau-rahmen { width: min(1024px, 100%); aspect-ratio: 4 / 3; max-height: 88vh; border-radius: 18px; overflow: hidden; position: relative; box-shadow: 0 30px 80px rgba(0,0,0,.5); background: #000; }
+  .vorschau iframe { width: 100%; height: 100%; border: 0; display: block; }
+  .vorschau .zu { position: absolute; top: 12px; left: 12px; z-index: 2; }
+  .fertig-meldung { position: fixed; inset: 0; z-index: 30; display: grid; place-content: center; text-align: center; gap: 10px; background: var(--bg); padding: 30px; }
+  .fertig-meldung[hidden] { display: none; }
+  .fertig-meldung h2 { font: 300 2.6rem/1.1 var(--serif); margin: 0; }
+  @media (max-width: 820px) { .seite { grid-template-columns: 1fr; } nav.inhalt { display: none; } }
+</style>
+</head>
+<body>
+<div class="seite">
+  <header>
+    <a class="zurueck" id="zurueck" href="index.html">← Sammlung</a>
+    <p class="eyebrow">Duftgarderobe</p>
+    <h1>Einstellungen</h1>
+    <p class="einleitung" id="einleitung">Alles wird sofort in diesem Browser gespeichert. Damit Widget und Sprüh-Animation auf dem iPad
+      die Einstellungen bekommen, tippe unten auf <strong>„An Scriptable übertragen“</strong>.</p>
+  </header>
+  <nav class="inhalt" aria-label="Abschnitte">
+    <a href="#gruppe-widget">Widget</a>
+    <a href="#gruppe-vorschlag">Vorschlag</a>
+    <a href="#gruppe-spray">Sprüh-Animation</a>
+    <a href="#gruppe-galerie">Galerie</a>
+    <a href="#sichern">Sichern</a>
+  </nav>
+  <main>
+    <div id="formular"></div>
+    <section class="eg-gruppe sichern" id="sichern">
+      <h2>Sichern & Übertragen</h2>
+      <p>Alle Einstellungen als Text – zum Aufheben oder um sie auf ein anderes Gerät zu kopieren.</p>
+      <textarea id="json" spellcheck="false" aria-label="Einstellungen als JSON"></textarea>
+      <div class="reihe">
+        <button class="knopf klein" type="button" id="kopieren">Kopieren</button>
+        <button class="knopf klein" type="button" id="einlesen">Aus dem Textfeld übernehmen</button>
+        <button class="knopf klein" type="button" id="zuruecksetzen">Alles zurücksetzen</button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="leiste">
+  <div class="leiste-innen">
+    <span class="status" id="status">Gespeichert</span>
+    <select class="test-wahl" id="testDuft" aria-label="Duft für den Test"></select>
+    <button class="knopf" type="button" id="testen">Sprühen testen</button>
+    <a class="knopf primaer" id="uebertragen" href="#">An Scriptable übertragen</a>
+  </div>
+</div>
+
+<div class="vorschau" id="vorschau" hidden>
+  <div class="vorschau-rahmen">
+    <button class="knopf klein zu" type="button" id="vorschauZu" style="background:rgba(0,0,0,.45); color:#fff; border-color:rgba(255,255,255,.3)">Schließen</button>
+    <iframe id="vorschauFrame" title="Sprüh-Vorschau"></iframe>
+  </div>
+</div>
+
+<div class="fertig-meldung" id="fertig" hidden>
+  <h2>Übernommen.</h2>
+  <p>Du kannst dieses Fenster jetzt schließen.</p>
+</div>
+
+<script src="js/gemeinsam.js"></script>
+<script src="js/einstellungen.js"></script>
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const ausScriptable = new URLSearchParams(location.search).get("quelle") === "scriptable";
+let werte = DuftEinstellungen.laden();
+let duefte = [];
+
+function themaAnwenden() {
+  const t = werte["galerie.thema"];
+  document.documentElement.toggleAttribute("data-dunkel", t === "dunkel" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches));
+}
+
+function linkAktualisieren() {
+  $("#uebertragen").href = DuftEinstellungen.scriptableLink(DuftEinstellungen.abweichungen(werte));
+  $("#json").value = JSON.stringify(werte, null, 2);
+}
+
+let statusTimer;
+function geaendert(neu) {
+  werte = neu;
+  const ok = DuftEinstellungen.speichern(werte);
+  $("#status").textContent = ok ? "Gespeichert ✓" : "Nicht gespeichert (Browser-Speicher gesperrt)";
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => { $("#status").textContent = "Gespeichert"; }, 1600);
+  themaAnwenden();
+  linkAktualisieren();
+}
+
+const form = DuftEinstellungen.formular($("#formular"), werte, { onChange: geaendert });
+themaAnwenden();
+linkAktualisieren();
+
+if (ausScriptable) {
+  // In Scriptable fängt das Skript den Link ab und speichert die Werte
+  $("#zurueck").hidden = true;
+  $("#einleitung").textContent = "Änderungen gelten für Widget und Sprüh-Animation, sobald du unten auf „Speichern“ tippst.";
+  $("#uebertragen").textContent = "Speichern";
+  $("#uebertragen").addEventListener("click", () => setTimeout(() => { $("#fertig").hidden = false; }, 150));
+}
+
+// ── Sprühen testen ──────────────────────────────────────────
+$("#testen").addEventListener("click", () => {
+  const id = $("#testDuft").value;
+  const e = encodeURIComponent(JSON.stringify(DuftEinstellungen.teil(werte, "spray")));
+  $("#vorschauFrame").src = `spray.html?id=${encodeURIComponent(id)}&quelle=scriptable&e=${e}&grund=${encodeURIComponent("So sieht dein Vorschlag aus")}`;
+  $("#vorschau").hidden = false;
+});
+$("#vorschauZu").addEventListener("click", () => { $("#vorschau").hidden = true; $("#vorschauFrame").src = "about:blank"; });
+
+// ── Sichern ─────────────────────────────────────────────────
+$("#kopieren").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText($("#json").value); $("#status").textContent = "In die Zwischenablage kopiert"; }
+  catch (_) { $("#json").select(); document.execCommand("copy"); }
+});
+$("#einlesen").addEventListener("click", () => {
+  try {
+    const neu = DuftEinstellungen.bereinigen(JSON.parse($("#json").value));
+    form.setzen(neu);
+    geaendert(neu);
+  } catch (e) {
+    $("#status").textContent = "Das ist kein gültiges JSON.";
+  }
+});
+$("#zuruecksetzen").addEventListener("click", () => {
+  if (!confirm("Alle Einstellungen auf die Standardwerte zurücksetzen?")) return;
+  const neu = DuftEinstellungen.standard();
+  form.setzen(neu);
+  geaendert(neu);
+});
+
+(async () => {
+  try {
+    duefte = await Duft.duefteLaden();
+    form.duefteSetzen(duefte);
+    $("#testDuft").replaceChildren(...duefte.map(d => Duft.el("option", { value: d.id }, d.name)));
+  } catch (e) {
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>
