@@ -21,8 +21,7 @@
 // ═════════════════════════════════════════════════════════════
 
 // Adresse des Ordners web/ auf GitHub Pages – mit "/" am Ende.
-const BASE_URL = "
-  https://simme2305-oss.github.io/parfuem-app/parf%C3%BCm%20app%20ipad/web/";
+const BASE_URL = "https://simme2305-oss.github.io/parfuem-app/parf%C3%BCm%20app%20ipad/web/";
 
 // Ordner für Zustand und eigene Fotos (iCloud Drive › Scriptable) und Zwischenspeicher (lokal).
 const DATEN_ORDNER = "DuftDesTages-Daten";
